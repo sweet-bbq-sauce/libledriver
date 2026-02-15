@@ -11,9 +11,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(LEDRIVER_WINDOWS_SOCKETS FALSE)
+
+if(WIN32 OR MINGW OR CMAKE_CXX_COMPILER MATCHES "w64-mingw32|mingw")
+    set(LEDRIVER_WINDOWS_SOCKETS TRUE)
+endif()
+
 add_library(ledriver STATIC ledriver.cpp)
 target_include_directories(ledriver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ledriver PUBLIC $<$<PLATFORM_ID:Windows>:ws2_32>)
+
+if(LEDRIVER_WINDOWS_SOCKETS)
+    target_link_libraries(ledriver PUBLIC ws2_32)
+endif()
 
 find_package(Doxygen)
 
@@ -29,4 +38,10 @@ if(DOXYGEN_FOUND)
         COMMENT "Generating API documentation with Doxygen"
         VERBATIM
     )
+endif()
+
+option(BUILD_EXAMPLES "Build examples" ON)
+
+if(BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()

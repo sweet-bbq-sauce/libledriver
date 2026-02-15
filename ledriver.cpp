@@ -1,5 +1,4 @@
 #include <chrono>
-#include <cstdint>
 #include <limits>
 #include <system_error>
 #include <utility>
@@ -7,6 +6,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #if defined(_WIN32)
@@ -33,8 +33,7 @@ namespace {
 struct WSAInit {
     WSAInit() {
         WSADATA w{};
-        const int result = ::WSAStartup(MAKEWORD(2, 2), &w);
-        if (result != 0)
+        if (const int result = ::WSAStartup(MAKEWORD(2, 2), &w); result != 0)
             throw std::system_error(result, std::system_category(), "WSAStartup");
     }
 
@@ -47,54 +46,68 @@ struct WSAInit {
 
 namespace {
 
+//! Serialize `Action` to `u8`.
 constexpr inline std::uint8_t SERIALIZE_ACTION(LEDriver::Action action) noexcept {
     return static_cast<std::uint8_t>(action);
 };
 
+//! Deserialize `u8` to `Action`.
 constexpr inline LEDriver::Action DESERIALIZE_ACTION(std::uint8_t action) noexcept {
     return static_cast<LEDriver::Action>(action);
 };
 
+//! Serialize `u16` from host endian to network endian.
 constexpr inline std::uint16_t SERIALIZE_U16(std::uint16_t u16_he) noexcept {
     return ::htons(u16_he);
 };
 
+//! Deserialize `u16` from network endian to host endian.
 constexpr inline std::uint16_t DESERIALIZE_U16(std::uint16_t u16_ne) noexcept {
     return ::ntohs(u16_ne);
 };
 
+//! Serialize `u32` from host endian to network endian.
 constexpr inline std::uint32_t SERIALIZE_U32(std::uint32_t u32_he) noexcept {
     return ::htonl(u32_he);
 };
 
+//! Deserialize `u32` from network endian to host endian.
 constexpr inline std::uint32_t DESERIALIZE_U32(std::uint32_t u32_ne) noexcept {
     return ::ntohl(u32_ne);
 };
 
+//! Create `std::span<std::byte>` from any trivially copyable type object.
 template <typename T> constexpr inline std::span<std::byte> TO_IOV(T& data) noexcept {
     return {reinterpret_cast<std::byte*>(&data), sizeof(data)};
 }
 
+//! Create `std::span<const std::byte>` from any trivially copyable type object.
 template <typename T> constexpr inline std::span<const std::byte> TO_CIOV(const T& data) noexcept {
     return {reinterpret_cast<const std::byte*>(&data), sizeof(data)};
 }
 
 } // namespace
 
-LEDriver::Connector::Connector(const sockaddr_storage& addr, std::chrono::milliseconds timeout) {
+LEDriver::Controller::Controller(const sockaddr_storage& addr, std::chrono::milliseconds timeout) {
+
+    // Require RootHeader to be 8 bytes.
     static_assert(sizeof(LEDriver::RootHeader) == 8, "RootHeader must be 8 bytes");
 
+    // Support only IP4 and IP6.
     if (addr.ss_family != AF_INET && addr.ss_family != AF_INET6)
         throw std::system_error(EINVAL, std::generic_category());
 
+    // If windows, initialize winsock.
 #if defined(_WIN32)
     static WSAInit wsa;
 #endif
 
+    // Create UDP socket.
     fd_ = ::socket(addr.ss_family, SOCK_DGRAM, 0);
     if (fd_ == invalid_socket)
         throw std::system_error(GET_SOCKET_ERROR(), std::system_category(), "socket");
 
+    // Use `connect()` on UDP, so we don't need to keep server address.
     if (::connect(fd_, reinterpret_cast<const sockaddr*>(&addr),
                   addr.ss_family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6)) != 0) {
         close();
@@ -103,6 +116,7 @@ LEDriver::Connector::Connector(const sockaddr_storage& addr, std::chrono::millis
 
     const auto timeout_ms = timeout.count();
 
+    // Set recv timeout.
 #if defined(_WIN32)
     DWORD ms;
     if (timeout_ms <= 0)
@@ -130,9 +144,9 @@ LEDriver::Connector::Connector(const sockaddr_storage& addr, std::chrono::millis
 #endif
 }
 
-LEDriver::Connector::Connector(Connector&& other) noexcept : fd_(std::exchange(other.fd_, invalid_socket)) {}
+LEDriver::Controller::Controller(Controller&& other) noexcept : fd_(std::exchange(other.fd_, invalid_socket)) {}
 
-LEDriver::Connector& LEDriver::Connector::operator=(Connector&& other) noexcept {
+LEDriver::Controller& LEDriver::Controller::operator=(Controller&& other) noexcept {
     if (this == &other)
         return *this;
 
@@ -142,11 +156,11 @@ LEDriver::Connector& LEDriver::Connector::operator=(Connector&& other) noexcept 
     return *this;
 }
 
-LEDriver::Connector::~Connector() noexcept {
+LEDriver::Controller::~Controller() noexcept {
     close();
 }
 
-void LEDriver::Connector::close() noexcept {
+void LEDriver::Controller::close() noexcept {
     if (fd_ == invalid_socket)
         return;
 
@@ -159,7 +173,7 @@ void LEDriver::Connector::close() noexcept {
     fd_ = invalid_socket;
 }
 
-bool LEDriver::Connector::ping() {
+bool LEDriver::Controller::ping() {
     if (!is_valid())
         throw std::system_error(ENOTCONN, std::generic_category());
 
@@ -169,15 +183,18 @@ bool LEDriver::Connector::ping() {
     ping_header.action = SERIALIZE_ACTION(Action::PING);
     ping_header.flags = 0;
 
+    // Send PING frame to driver.
     send_({TO_CIOV(ping_header)});
 
     try {
 
+        // Wait for a PONG frame from the server.
         if (recv_({TO_IOV(pong_header)}) != sizeof(RootHeader))
             throw std::system_error(EIO, std::generic_category());
 
     } catch (const std::system_error& se) {
 
+        // If the recv error is due to timeout, return false.
         const int code = se.code().value();
 #if defined(_WIN32)
         if (code == WSAETIMEDOUT || code == WSAEWOULDBLOCK)
@@ -190,11 +207,12 @@ bool LEDriver::Connector::ping() {
         throw;
     }
 
+    // PING and PONG frames must be the same.
     return ping_header.magic == pong_header.magic && ping_header.version == pong_header.version &&
            ping_header.action == pong_header.action && ping_header.flags == pong_header.flags;
 }
 
-void LEDriver::Connector::update(std::uint16_t r, std::uint16_t g, std::uint16_t b) {
+void LEDriver::Controller::update(std::uint16_t r, std::uint16_t g, std::uint16_t b) {
     if (!is_valid())
         throw std::system_error(ENOTCONN, std::generic_category());
 
@@ -204,20 +222,21 @@ void LEDriver::Connector::update(std::uint16_t r, std::uint16_t g, std::uint16_t
     update_header.action = SERIALIZE_ACTION(Action::UPDATE);
     update_header.flags = 0;
 
+    // UPDATE action requires 6-byte payload (3 * u16), containing the channel brightness values ​​in net endian.
     const std::uint16_t values[3]{SERIALIZE_U16(r), SERIALIZE_U16(g), SERIALIZE_U16(b)};
 
     send_({TO_CIOV(update_header), TO_CIOV(values)});
 }
 
-bool LEDriver::Connector::is_valid() const noexcept {
+bool LEDriver::Controller::is_valid() const noexcept {
     return fd_ != invalid_socket;
 }
 
-LEDriver::Connector::operator bool() const noexcept {
+LEDriver::Controller::operator bool() const noexcept {
     return is_valid();
 }
 
-void LEDriver::Connector::send_(const std::vector<std::span<const std::byte>>& data) {
+void LEDriver::Controller::send_(const std::vector<std::span<const std::byte>>& data) {
     if (!is_valid())
         throw std::system_error(ENOTCONN, std::generic_category());
 
@@ -276,7 +295,7 @@ void LEDriver::Connector::send_(const std::vector<std::span<const std::byte>>& d
 #endif
 }
 
-std::size_t LEDriver::Connector::recv_(std::span<std::byte> data) {
+std::size_t LEDriver::Controller::recv_(std::span<std::byte> data) {
     if (!is_valid())
         throw std::system_error(ENOTCONN, std::generic_category());
 
@@ -296,5 +315,6 @@ std::size_t LEDriver::Connector::recv_(std::span<std::byte> data) {
         throw std::system_error(GET_SOCKET_ERROR(), std::system_category(), "recv");
 #endif
 
+    // Return the number of bytes received.
     return static_cast<std::size_t>(result);
 }

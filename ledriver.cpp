@@ -57,22 +57,22 @@ constexpr inline LEDriver::Action DESERIALIZE_ACTION(std::uint8_t action) noexce
 };
 
 //! Serialize `u16` from host endian to network endian.
-constexpr inline std::uint16_t SERIALIZE_U16(std::uint16_t u16_he) noexcept {
+inline std::uint16_t SERIALIZE_U16(std::uint16_t u16_he) noexcept {
     return ::htons(u16_he);
 };
 
 //! Deserialize `u16` from network endian to host endian.
-constexpr inline std::uint16_t DESERIALIZE_U16(std::uint16_t u16_ne) noexcept {
+inline std::uint16_t DESERIALIZE_U16(std::uint16_t u16_ne) noexcept {
     return ::ntohs(u16_ne);
 };
 
 //! Serialize `u32` from host endian to network endian.
-constexpr inline std::uint32_t SERIALIZE_U32(std::uint32_t u32_he) noexcept {
+inline std::uint32_t SERIALIZE_U32(std::uint32_t u32_he) noexcept {
     return ::htonl(u32_he);
 };
 
 //! Deserialize `u32` from network endian to host endian.
-constexpr inline std::uint32_t DESERIALIZE_U32(std::uint32_t u32_ne) noexcept {
+inline std::uint32_t DESERIALIZE_U32(std::uint32_t u32_ne) noexcept {
     return ::ntohl(u32_ne);
 };
 

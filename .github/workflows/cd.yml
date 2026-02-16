@@ -1,0 +1,110 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (GCC)
+            os: ubuntu-latest
+            toolchain: gcc
+            generator: Unix Makefiles
+            cmake_flags: -DCMAKE_BUILD_TYPE=Release
+            build_flags: ""
+            artifact_id: linux-gcc
+          - name: Windows (MSVC)
+            os: windows-latest
+            toolchain: msvc
+            generator: Visual Studio 17 2022
+            cmake_flags: -A x64
+            build_flags: --config Release
+            artifact_id: windows-msvc
+          - name: Windows (MinGW)
+            os: windows-latest
+            toolchain: mingw
+            generator: MinGW Makefiles
+            cmake_flags: -DCMAKE_BUILD_TYPE=Release
+            build_flags: ""
+            artifact_id: windows-mingw
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MinGW
+      if: matrix.toolchain == 'mingw'
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build
+        -G "${{ matrix.generator }}"
+        ${{ matrix.cmake_flags }}
+
+    - name: Build
+      run: cmake --build build ${{ matrix.build_flags }}
+
+    - name: Package Release Archive
+      id: package
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        mkdir -p package/include package/lib
+        cp ledriver.hpp package/include/
+        cp LICENSE package/
+
+        if [ "${{ matrix.toolchain }}" = "msvc" ]; then
+          LIB_PATH="$(find build -type f -name 'ledriver.lib' | head -n 1)"
+        else
+          LIB_PATH="$(find build -type f \( -name 'libledriver.a' -o -name 'ledriver.a' \) | head -n 1)"
+        fi
+
+        if [ -z "${LIB_PATH}" ]; then
+          echo "Library artifact not found."
+          exit 1
+        fi
+
+        cp "${LIB_PATH}" package/lib/
+
+        VERSION="${GITHUB_REF_NAME:-manual}"
+        ARCHIVE_NAME="ledriver-${VERSION}-${{ matrix.artifact_id }}.tar.gz"
+        cmake -E tar "cfvz" "${ARCHIVE_NAME}" --format=gnutar package
+        echo "archive=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_id }}
+        path: ${{ steps.package.outputs.archive }}
+        if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: release-assets
+
+    - name: Publish Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: release-assets/**/*.tar.gz
+        generate_release_notes: true

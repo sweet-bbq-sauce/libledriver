@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (GCC)
+            os: ubuntu-latest
+            toolchain: gcc
+            generator: Unix Makefiles
+            cmake_flags: -DCMAKE_BUILD_TYPE=Release
+            build_flags: ""
+          - name: Windows (MSVC)
+            os: windows-latest
+            toolchain: msvc
+            generator: Visual Studio 17 2022
+            cmake_flags: -A x64
+            build_flags: --config Release
+          - name: Windows (MinGW)
+            os: windows-latest
+            toolchain: mingw
+            generator: MinGW Makefiles
+            cmake_flags: -DCMAKE_BUILD_TYPE=Release
+            build_flags: ""
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MinGW
+      if: matrix.toolchain == 'mingw'
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build
+        -G "${{ matrix.generator }}"
+        ${{ matrix.cmake_flags }}
+
+    - name: Build
+      run: cmake --build build ${{ matrix.build_flags }}

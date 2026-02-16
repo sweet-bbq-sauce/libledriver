@@ -30,24 +30,46 @@ jobs:
           - name: Windows (MinGW)
             os: windows-latest
             toolchain: mingw
-            generator: MinGW Makefiles
+            generator: Ninja
             cmake_flags: -DCMAKE_BUILD_TYPE=Release
             build_flags: ""
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup MinGW
+    - name: Setup MinGW (MSYS2)
       if: matrix.toolchain == 'mingw'
-      uses: egor-tensin/setup-mingw@v2
+      uses: msys2/setup-msys2@v2
       with:
-        platform: x64
+        msystem: UCRT64
+        update: true
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-ninja
 
     - name: Configure CMake
+      if: matrix.toolchain != 'mingw'
       run: >
         cmake -S . -B build
         -G "${{ matrix.generator }}"
         ${{ matrix.cmake_flags }}
 
+    - name: Configure CMake (MinGW)
+      if: matrix.toolchain == 'mingw'
+      shell: msys2 {0}
+      run: >
+        cmake -S . -B build
+        -G Ninja
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_C_COMPILER=gcc
+        -DCMAKE_CXX_COMPILER=g++
+
     - name: Build
+      if: matrix.toolchain != 'mingw'
       run: cmake --build build ${{ matrix.build_flags }}
+
+    - name: Build (MinGW)
+      if: matrix.toolchain == 'mingw'
+      shell: msys2 {0}
+      run: cmake --build build

@@ -32,10 +32,11 @@ namespace LEDriver {
     In the server's response, it indicates the response context.
 */
 enum class Action : std::uint8_t {
-    NONE = 0x00,  //!< No action. The server ignores the command and does not send any response.
-    PING = 0x01,  //!< Ping-pong. The server sends back as a response the same header as the one sent by the client.
-                  //!< See `Controller::ping()`.
-    UPDATE = 0x02 //!< Update LED state. See `Controller::update()`.
+    NONE = 0x00,   //!< No action. The server ignores the command and does not send any response.
+    PING = 0x01,   //!< Ping-pong. The server sends back as a response the same header as the one sent by the client.
+                   //!< See `Controller::ping()`.
+    UPDATE = 0x02, //!< Update LED state. See `Controller::update()`.
+    POWER = 0x03   //!< Turn the driver ON/OFF.
 };
 
 //! `RootHeader` is the main header of each frame used in driver-client communication.
@@ -113,6 +114,17 @@ class Controller {
                - system network layer errors
     */
     void update(const ColorState& state);
+
+    /*!
+        \brief Turn the driver ON/OFF.
+
+        \param state - ON = `true`, OFF = `false`.
+
+        \throw std::system_error
+               - `ENOTCONN` when Controller is not valid (closed)
+               - system network layer errors
+    */
+    void power(bool state);
 
     //! \return `true` when Controller is valid (not closed).
     bool is_valid() const noexcept;

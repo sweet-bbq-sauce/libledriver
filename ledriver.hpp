@@ -36,7 +36,8 @@ enum class Action : std::uint8_t {
     PING = 0x01,   //!< Ping-pong. The server sends back as a response the same header as the one sent by the client.
                    //!< See `Controller::ping()`.
     UPDATE = 0x02, //!< Update LED state. See `Controller::update()`.
-    POWER = 0x03   //!< Turn the driver ON/OFF.
+    POWER = 0x03,  //!< Turn the driver ON/OFF.
+    STATUS = 0x04  //!< Get driver status (current color and power state).
 };
 
 //! `RootHeader` is the main header of each frame used in driver-client communication.
@@ -62,6 +63,12 @@ struct ColorState {
     channel_brightness_t r{}; //!< Red channel brightness.
     channel_brightness_t g{}; //!< Green channel brightness.
     channel_brightness_t b{}; //!< Blue channel brightness.
+};
+
+//! Contains driver status.
+struct Status {
+    ColorState color; //!< Color state. See `ColorState`.
+    bool power;       //!< Driver ON/OFF.
 };
 
 //! A move-only class that allows connectionless (UDP) communication with the driver.
@@ -125,6 +132,17 @@ class Controller {
                - system network layer errors
     */
     void power(bool state);
+
+    /*!
+        \brief Get driver status.
+
+        \return `Status` object containing current color and power state. See `Status`.
+
+        \throw std::system_error
+               - `ENOTCONN` when Controller is not valid (closed)
+               - system network layer errors
+    */
+    Status status();
 
     //! \return `true` when Controller is valid (not closed).
     bool is_valid() const noexcept;

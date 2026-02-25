@@ -20,7 +20,9 @@ endif()
 set(SOURCES
     "ledriver.cpp"
     "ping.cpp"
+    "power.cpp"
     "update.cpp"
+    "status.cpp"
 )
 
 add_library(ledriver STATIC ${SOURCES})

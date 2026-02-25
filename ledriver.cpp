@@ -1,12 +1,12 @@
 #include <chrono>
 #include <limits>
+#include <sys/types.h>
 #include <system_error>
 #include <utility>
 #include <vector>
 
 #include <cerrno>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 
 #if defined(_WIN32)
@@ -27,6 +27,7 @@
 #endif
 
 #include <ledriver.hpp>
+#include <tools.hpp>
 
 #if defined(_WIN32)
 namespace {
@@ -43,50 +44,6 @@ struct WSAInit {
 };
 } // namespace
 #endif
-
-namespace {
-
-//! Serialize `Action` to `u8`.
-constexpr inline std::uint8_t SERIALIZE_ACTION(LEDriver::Action action) noexcept {
-    return static_cast<std::uint8_t>(action);
-};
-
-//! Deserialize `u8` to `Action`.
-constexpr inline LEDriver::Action DESERIALIZE_ACTION(std::uint8_t action) noexcept {
-    return static_cast<LEDriver::Action>(action);
-};
-
-//! Serialize `u16` from host endian to network endian.
-inline std::uint16_t SERIALIZE_U16(std::uint16_t u16_he) noexcept {
-    return ::htons(u16_he);
-};
-
-//! Deserialize `u16` from network endian to host endian.
-inline std::uint16_t DESERIALIZE_U16(std::uint16_t u16_ne) noexcept {
-    return ::ntohs(u16_ne);
-};
-
-//! Serialize `u32` from host endian to network endian.
-inline std::uint32_t SERIALIZE_U32(std::uint32_t u32_he) noexcept {
-    return ::htonl(u32_he);
-};
-
-//! Deserialize `u32` from network endian to host endian.
-inline std::uint32_t DESERIALIZE_U32(std::uint32_t u32_ne) noexcept {
-    return ::ntohl(u32_ne);
-};
-
-//! Create `std::span<std::byte>` from any trivially copyable type object.
-template <typename T> constexpr inline std::span<std::byte> TO_IOV(T& data) noexcept {
-    return {reinterpret_cast<std::byte*>(&data), sizeof(data)};
-}
-
-//! Create `std::span<const std::byte>` from any trivially copyable type object.
-template <typename T> constexpr inline std::span<const std::byte> TO_CIOV(const T& data) noexcept {
-    return {reinterpret_cast<const std::byte*>(&data), sizeof(data)};
-}
-
-} // namespace
 
 bool LEDriver::ColorState::operator==(const ColorState& other) const noexcept {
     return r == other.r && g == other.g && b == other.b;
@@ -175,67 +132,6 @@ void LEDriver::Controller::close() noexcept {
 #endif
 
     fd_ = invalid_socket;
-}
-
-bool LEDriver::Controller::ping() {
-    if (!is_valid())
-        throw std::system_error(ENOTCONN, std::generic_category());
-
-    RootHeader ping_header{}, pong_header;
-    ping_header.magic = SERIALIZE_U32(RootHeader::magic_value);
-    ping_header.version = RootHeader::protocol_version;
-    ping_header.action = SERIALIZE_ACTION(Action::PING);
-    ping_header.flags = 0;
-
-    // Send PING frame to driver.
-    send_({TO_CIOV(ping_header)});
-
-    try {
-
-        // Wait for a PONG frame from the server.
-        if (recv_({TO_IOV(pong_header)}) != sizeof(RootHeader))
-            throw std::system_error(EIO, std::generic_category());
-
-    } catch (const std::system_error& se) {
-
-        // If the recv error is due to timeout, return false.
-        const int code = se.code().value();
-#if defined(_WIN32)
-        if (code == WSAETIMEDOUT || code == WSAEWOULDBLOCK)
-            return false;
-#else
-        if (code == ETIMEDOUT || code == EWOULDBLOCK || code == EAGAIN)
-            return false;
-#endif
-
-        throw;
-    }
-
-    // PING and PONG frames must be the same.
-    return ping_header.magic == pong_header.magic && ping_header.version == pong_header.version &&
-           ping_header.action == pong_header.action && ping_header.flags == pong_header.flags;
-}
-
-void LEDriver::Controller::update(const ColorState& state) {
-    if (!is_valid())
-        throw std::system_error(ENOTCONN, std::generic_category());
-
-    // If the color state persists, do not send.
-    if (state == color_state_cache_)
-        return;
-
-    RootHeader update_header{};
-    update_header.magic = SERIALIZE_U32(RootHeader::magic_value);
-    update_header.version = RootHeader::protocol_version;
-    update_header.action = SERIALIZE_ACTION(Action::UPDATE);
-    update_header.flags = 0;
-
-    // UPDATE action requires 6-byte payload (3 * u16), containing the channel brightness values ​​in net endian.
-    const std::uint16_t values[3]{SERIALIZE_U16(state.r), SERIALIZE_U16(state.g), SERIALIZE_U16(state.b)};
-
-    send_({TO_CIOV(update_header), TO_CIOV(values)});
-
-    color_state_cache_ = state;
 }
 
 bool LEDriver::Controller::is_valid() const noexcept {

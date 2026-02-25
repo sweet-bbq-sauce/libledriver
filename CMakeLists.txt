@@ -17,7 +17,13 @@ if(WIN32 OR MINGW OR CMAKE_CXX_COMPILER MATCHES "w64-mingw32|mingw")
     set(LEDRIVER_WINDOWS_SOCKETS TRUE)
 endif()
 
-add_library(ledriver STATIC ledriver.cpp)
+set(SOURCES
+    "ledriver.cpp"
+    "ping.cpp"
+    "update.cpp"
+)
+
+add_library(ledriver STATIC ${SOURCES})
 target_include_directories(ledriver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(LEDRIVER_WINDOWS_SOCKETS)

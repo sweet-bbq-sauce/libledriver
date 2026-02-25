@@ -19,7 +19,7 @@
 namespace {
 
 constexpr auto print_help = []() {
-    std::cout << "Usage: (4|6) address port R G B" << std::endl;
+    std::cout << "Usage: (4|6) ip port R G B" << std::endl;
     std::cout << "Values R, G and B must be in the range 0-65535" << std::endl;
 };
 
@@ -55,15 +55,15 @@ int main(int argn, char* argv[]) {
     }
 
     // Get channel brightness values from arguments.
-    const std::uint16_t R = static_cast<std::uint16_t>(std::stoul(argv[4]));
-    const std::uint16_t G = static_cast<std::uint16_t>(std::stoul(argv[5]));
-    const std::uint16_t B = static_cast<std::uint16_t>(std::stoul(argv[6]));
+    LEDriver::ColorState state{static_cast<std::uint16_t>(std::stoul(argv[4])),
+                               static_cast<std::uint16_t>(std::stoul(argv[5])),
+                               static_cast<std::uint16_t>(std::stoul(argv[6]))};
 
     // Create controller.
     LEDriver::Controller ctl(ss);
 
     // Update LED brightness.
-    ctl.update(R, G, B);
+    ctl.update(state);
 
     return EXIT_SUCCESS;
 }

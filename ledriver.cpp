@@ -88,6 +88,10 @@ template <typename T> constexpr inline std::span<const std::byte> TO_CIOV(const 
 
 } // namespace
 
+bool LEDriver::ColorState::operator==(const ColorState& other) const noexcept {
+    return r == other.r && g == other.g && b == other.b;
+}
+
 LEDriver::Controller::Controller(const sockaddr_storage& addr, std::chrono::milliseconds timeout) {
 
     // Require RootHeader to be 8 bytes.
@@ -212,9 +216,13 @@ bool LEDriver::Controller::ping() {
            ping_header.action == pong_header.action && ping_header.flags == pong_header.flags;
 }
 
-void LEDriver::Controller::update(std::uint16_t r, std::uint16_t g, std::uint16_t b) {
+void LEDriver::Controller::update(const ColorState& state) {
     if (!is_valid())
         throw std::system_error(ENOTCONN, std::generic_category());
+
+    // If the color state persists, do not send.
+    if (state == color_state_cache_)
+        return;
 
     RootHeader update_header{};
     update_header.magic = SERIALIZE_U32(RootHeader::magic_value);
@@ -223,7 +231,7 @@ void LEDriver::Controller::update(std::uint16_t r, std::uint16_t g, std::uint16_
     update_header.flags = 0;
 
     // UPDATE action requires 6-byte payload (3 * u16), containing the channel brightness values ​​in net endian.
-    const std::uint16_t values[3]{SERIALIZE_U16(r), SERIALIZE_U16(g), SERIALIZE_U16(b)};
+    const std::uint16_t values[3]{SERIALIZE_U16(state.r), SERIALIZE_U16(state.g), SERIALIZE_U16(state.b)};
 
     send_({TO_CIOV(update_header), TO_CIOV(values)});
 }

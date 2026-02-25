@@ -49,6 +49,20 @@ struct RootHeader {
     static constexpr std::uint8_t protocol_version = 0x00;   //!< unstable/dev version
 };
 
+//! Contains RGB state.
+struct ColorState {
+
+    //! Represents brightness of one channel (color) as unsigned 16-bit value.
+    using channel_brightness_t = std::uint16_t;
+
+    //! Compre two `ColorState` objects.
+    bool operator==(const ColorState&) const noexcept;
+
+    channel_brightness_t r{}; //!< Red channel brightness.
+    channel_brightness_t g{}; //!< Green channel brightness.
+    channel_brightness_t b{}; //!< Blue channel brightness.
+};
+
 //! A move-only class that allows connectionless (UDP) communication with the driver.
 class Controller {
   public:
@@ -92,15 +106,13 @@ class Controller {
         \brief Update the LED status in the driver. The driver does not return any response.
                Each channel takes on a 16-bit value, specifying the channel's brightness.
 
-        \param r - red channel
-        \param g - green channel
-        \param b - blue channel
+        \param state - color state. See `ColorState`.
 
         \throw std::system_error
                - `ENOTCONN` when Controller is not valid (closed)
                - system network layer errors
     */
-    void update(std::uint16_t r, std::uint16_t g, std::uint16_t b);
+    void update(const ColorState& state);
 
     //! \return `true` when Controller is valid (not closed).
     bool is_valid() const noexcept;
@@ -121,6 +133,8 @@ class Controller {
 #endif
 
     socket_t fd_{invalid_socket};
+
+    ColorState color_state_cache_;
 
     void send_(const std::vector<std::span<const std::byte>>& data);
     std::size_t recv_(std::span<std::byte> data);

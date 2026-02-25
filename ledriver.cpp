@@ -234,6 +234,8 @@ void LEDriver::Controller::update(const ColorState& state) {
     const std::uint16_t values[3]{SERIALIZE_U16(state.r), SERIALIZE_U16(state.g), SERIALIZE_U16(state.b)};
 
     send_({TO_CIOV(update_header), TO_CIOV(values)});
+
+    color_state_cache_ = state;
 }
 
 bool LEDriver::Controller::is_valid() const noexcept {
